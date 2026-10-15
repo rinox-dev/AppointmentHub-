@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.appointmenthub.ui.DuplicateBookingUiTest
--------------------------------------------------------------------------------
-Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.657 s -- in com.appointmenthub.ui.DuplicateBookingUiTest

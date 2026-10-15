@@ -1,7 +1,7 @@
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.539 s -- in com.appointmenthub.ui.BrowseServicesUiTest
-[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.056 s -- in com.appointmenthub.ui.BookingValidationUiTest
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.561 s -- in com.appointmenthub.ui.BookAppointmentUiTest
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.665 s -- in com.appointmenthub.ui.ApiToUiConsistencyUiTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.537 s -- in com.appointmenthub.ui.CancelAppointmentUiTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.652 s -- in com.appointmenthub.ui.DuplicateBookingUiTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.520 s -- in com.appointmenthub.ui.BrowseServicesUiTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.605 s -- in com.appointmenthub.ui.BookingValidationUiTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.541 s -- in com.appointmenthub.ui.BookAppointmentUiTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.202 s -- in com.appointmenthub.ui.ApiToUiConsistencyUiTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.001 s -- in com.appointmenthub.ui.CancelAppointmentUiTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.155 s -- in com.appointmenthub.ui.DuplicateBookingUiTest
 [INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
