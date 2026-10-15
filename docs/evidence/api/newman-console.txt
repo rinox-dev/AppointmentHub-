@@ -1,0 +1,328 @@
+newman
+
+AppointmentHub - REST API tests
+
+❏ 00 Services
+↳ TC-001 Get active services
+  GET http://localhost:18080/api/services [200 OK, 442B, 18ms]
+  ✓  HTTP status is 200
+  ✓  Response is JSON
+  ✓  Response time is under the 2 second target (NFR-02)
+  ✓  Only active services are returned
+  ✓  Every service matches the documented contract
+  ✓  Service 1 is available and lasts 30 minutes
+
+↳ Get services including inactive ones
+  GET http://localhost:18080/api/services?includeInactive=true [200 OK, 518B, 47ms]
+  ✓  HTTP status is 200
+  ✓  The catalog also contains the inactive test service
+
+↳ Unsupported method on services
+  POST http://localhost:18080/api/services [405 Method Not Allowed, 261B, 45ms]
+  ✓  HTTP status is 405
+  ✓  Functional error code is METHOD_NOT_ALLOWED
+  ✓  Error message does not expose internals (NFR-08)
+
+❏ 01 Availability
+↳ TC-002 Get availability for a valid date
+  GET http://localhost:18080/api/availability?serviceId=1&date=2027-05-20 [200 OK, 892B, 50ms]
+  ✓  HTTP status is 200
+  ✓  Response is JSON
+  ✓  Response time is under the 2 second target (NFR-02)
+  ✓  The response describes the requested service and date
+  ✓  Slots are aligned to 30 minutes and stay inside business hours
+
+↳ Availability for a past date is empty
+  GET http://localhost:18080/api/availability?serviceId=1&date=2026-10-14 [200 OK, 253B, 43ms]
+  ✓  HTTP status is 200
+  ✓  A past date offers no slot (FR-02)
+
+↳ Availability without serviceId
+  GET http://localhost:18080/api/availability?date=2027-06-21 [400 Bad Request, 237B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ Availability without date
+  GET http://localhost:18080/api/availability?serviceId=1 [400 Bad Request, 232B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+↳ Availability with a non numeric serviceId
+  GET http://localhost:18080/api/availability?serviceId=abc&date=2027-02-18 [400 Bad Request, 244B, 44ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+↳ Availability with an invalid date format
+  GET http://localhost:18080/api/availability?serviceId=1&date=11-02-2027 [400 Bad Request, 279B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is INVALID_DATE_FORMAT
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ Availability for a nonexistent service
+  GET http://localhost:18080/api/availability?serviceId=99&date=2027-02-17 [404 Not Found, 240B, 43ms]
+  ✓  HTTP status is 404
+  ✓  Functional error code is SERVICE_NOT_FOUND
+
+↳ Availability for an inactive service
+  GET http://localhost:18080/api/availability?serviceId=5&date=2027-01-19 [409 Conflict, 282B, 43ms]
+  ✓  HTTP status is 409
+  ✓  Functional error code is SERVICE_INACTIVE
+
+❏ 02 Appointment creation
+↳ TC-003 Create an appointment with valid data
+  POST http://localhost:18080/api/appointments [201 Created, 377B, 46ms]
+  ✓  HTTP status is 201
+  ✓  Response is JSON
+  ✓  A unique identifier is returned (FR-04)
+  ✓  The appointment is confirmed and echoes the request
+
+↳ Create an appointment for a 60 minute service
+  POST http://localhost:18080/api/appointments [201 Created, 381B, 42ms]
+  ✓  HTTP status is 201
+  ✓  The end time derives from the service duration (BR-06)
+
+❏ 03 Appointment retrieval
+↳ TC-009 Get an existing appointment
+  GET http://localhost:18080/api/appointments/1001 [200 OK, 372B, 42ms]
+  ✓  HTTP status is 200
+  ✓  Response is JSON
+  ✓  Response time is under the 2 second target (NFR-02)
+  ✓  The retrieved appointment matches the created one
+
+↳ Get the registered appointments
+  GET http://localhost:18080/api/appointments [200 OK, 602B, 42ms]
+  ✓  HTTP status is 200
+  ✓  Response is JSON
+  ✓  Response time is under the 2 second target (NFR-02)
+  ✓  The list contains the appointment created earlier (FR-06)
+
+↳ Filter the appointment list by customer email
+  GET http://localhost:18080/api/appointments?customerEmail=ana@example.com [200 OK, 374B, 42ms]
+  ✓  HTTP status is 200
+  ✓  Only appointments of that customer are returned
+
+↳ TC-010 Get a nonexistent appointment
+  GET http://localhost:18080/api/appointments/987654 [404 Not Found, 252B, 43ms]
+  ✓  HTTP status is 404
+  ✓  Functional error code is APPOINTMENT_NOT_FOUND
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ Get an appointment with a non numeric id
+  GET http://localhost:18080/api/appointments/not-a-number [400 Bad Request, 288B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+❏ 04 Cancellation
+↳ TC-011 Cancel a confirmed appointment
+  DELETE http://localhost:18080/api/appointments/1001 [200 OK, 372B, 43ms]
+  ✓  HTTP status is 200
+  ✓  Response is JSON
+  ✓  The appointment is cancelled
+
+↳ The cancellation is persisted
+  GET http://localhost:18080/api/appointments/1001 [200 OK, 372B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The stored appointment is cancelled (NFR-04)
+
+↳ TC-014 The released slot is offered again
+  GET http://localhost:18080/api/availability?serviceId=1&date=2027-07-25 [200 OK, 892B, 43ms]
+  ✓  HTTP status is 200
+  ✓  The cancelled slot is available again (FR-11, BR-10)
+
+↳ TC-014 Book the released slot again
+  POST http://localhost:18080/api/appointments [201 Created, 381B, 42ms]
+  ✓  HTTP status is 201
+  ✓  The released slot can be booked by another customer
+
+↳ TC-012 Cancel an already cancelled appointment
+  DELETE http://localhost:18080/api/appointments/1001 [409 Conflict, 264B, 42ms]
+  ✓  HTTP status is 409
+  ✓  Functional error code is APPOINTMENT_ALREADY_CANCELLED
+  ✓  Error message does not expose internals (NFR-08)
+  ✓  The appointment keeps its cancelled status
+  GET http://localhost:18080/api/appointments/1001 [200 OK, 372B, 42ms]
+
+↳ TC-013 Cancel a nonexistent appointment
+  DELETE http://localhost:18080/api/appointments/987654 [404 Not Found, 252B, 42ms]
+  ✓  HTTP status is 404
+  ✓  Functional error code is APPOINTMENT_NOT_FOUND
+  ✓  Error message does not expose internals (NFR-08)
+
+❏ 05 Negative validation
+↳ TC-004 Booking without a name
+  POST http://localhost:18080/api/appointments [400 Bad Request, 240B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+  ✓  Error message does not expose internals (NFR-08)
+  ✓  The message names the offending field
+
+↳ TC-005 Booking without an email
+  POST http://localhost:18080/api/appointments [400 Bad Request, 241B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+  ✓  The message names the offending field
+
+↳ TC-006 Booking with a malformed email
+  POST http://localhost:18080/api/appointments [400 Bad Request, 260B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+↳ Booking with an email without a domain
+  POST http://localhost:18080/api/appointments [400 Bad Request, 260B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+↳ Booking without a service
+  POST http://localhost:18080/api/appointments [400 Bad Request, 237B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is VALIDATION_ERROR
+
+↳ TC-007 Booking for a past date
+  POST http://localhost:18080/api/appointments [400 Bad Request, 268B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is PAST_DATE
+  ✓  The rejected date is explained
+
+↳ TC-017 Booking with an invalid date format
+  POST http://localhost:18080/api/appointments [400 Bad Request, 290B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is INVALID_DATE_FORMAT
+
+↳ Booking with an invalid time format
+  POST http://localhost:18080/api/appointments [400 Bad Request, 274B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is INVALID_TIME_FORMAT
+
+↳ TC-022 Booking outside business hours
+  POST http://localhost:18080/api/appointments [400 Bad Request, 280B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is OUTSIDE_BUSINESS_HOURS
+
+↳ Booking with a misaligned start time
+  POST http://localhost:18080/api/appointments [400 Bad Request, 278B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is SLOT_NOT_ALIGNED
+
+↳ TC-016 Booking with a nonexistent service
+  POST http://localhost:18080/api/appointments [404 Not Found, 240B, 43ms]
+  ✓  HTTP status is 404
+  ✓  Functional error code is SERVICE_NOT_FOUND
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ TC-021 Booking with an inactive service
+  POST http://localhost:18080/api/appointments [409 Conflict, 282B, 42ms]
+  ✓  HTTP status is 409
+  ✓  Functional error code is SERVICE_INACTIVE
+
+↳ TC-018 Booking without a body
+  POST http://localhost:18080/api/appointments [400 Bad Request, 243B, 42ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is MISSING_BODY
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ TC-018 Booking with malformed JSON
+  POST http://localhost:18080/api/appointments [400 Bad Request, 278B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is MALFORMED_REQUEST
+  ✓  Error message does not expose internals (NFR-08)
+
+↳ Booking with a wrong data type
+  POST http://localhost:18080/api/appointments [400 Bad Request, 278B, 43ms]
+  ✓  HTTP status is 400
+  ✓  Functional error code is MALFORMED_REQUEST
+
+❏ 06 Conflict scenarios
+↳ Prepare a confirmed appointment
+  POST http://localhost:18080/api/appointments [201 Created, 391B, 43ms]
+  ✓  HTTP status is 201
+  ✓  The fixture appointment is confirmed
+
+↳ TC-008 Duplicate booking for the same slot
+  POST http://localhost:18080/api/appointments [409 Conflict, 269B, 43ms]
+  ✓  HTTP status is 409
+  ✓  Functional error code is SLOT_NOT_AVAILABLE
+  ✓  Error message does not expose internals (NFR-08)
+  ✓  The conflict explains which slot is occupied
+
+↳ TC-008 The duplicate is not registered
+  GET http://localhost:18080/api/appointments?customerEmail=duplicate.attempt@example.com [200 OK, 149B, 42ms]
+  ✓  HTTP status is 200
+  ✓  No appointment was created for the rejected request
+
+↳ TC-008 The original appointment is unchanged
+  GET http://localhost:18080/api/appointments/1004 [200 OK, 386B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The first appointment is still confirmed (BR-07)
+
+↳ TC-008 The occupied slot is no longer offered
+  GET http://localhost:18080/api/availability?serviceId=1&date=2027-04-06 [200 OK, 852B, 44ms]
+  ✓  HTTP status is 200
+  ✓  Availability reflects the occupied slot
+
+↳ Another service cannot use the same slot
+  POST http://localhost:18080/api/appointments [409 Conflict, 269B, 42ms]
+  ✓  HTTP status is 409
+  ✓  Functional error code is SLOT_NOT_AVAILABLE
+  ✓  The resource is exclusive for every service (BR-08)
+
+❏ 07 Regression (end to end)
+↳ Step 1 - Services are available
+  GET http://localhost:18080/api/services [200 OK, 442B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The catalog is not empty
+
+↳ Step 2 - Create an appointment
+  POST http://localhost:18080/api/appointments [201 Created, 392B, 42ms]
+  ✓  HTTP status is 201
+  ✓  The booking is confirmed and traceable
+
+↳ Step 3 - Retrieve the appointment
+  GET http://localhost:18080/api/appointments/1005 [200 OK, 387B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The appointment can be read back
+
+↳ Step 4 - The slot is occupied
+  GET http://localhost:18080/api/availability?serviceId=1&date=2027-03-27 [200 OK, 852B, 43ms]
+  ✓  HTTP status is 200
+  ✓  The booked slot is not offered
+
+↳ Step 5 - Cancel the appointment
+  DELETE http://localhost:18080/api/appointments/1005 [200 OK, 387B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The appointment is cancelled
+
+↳ Step 6 - The slot is released
+  GET http://localhost:18080/api/availability?serviceId=1&date=2027-03-27 [200 OK, 892B, 42ms]
+  ✓  HTTP status is 200
+  ✓  The slot is offered again (FR-11)
+
+↳ Step 7 - Rebook the released slot
+  POST http://localhost:18080/api/appointments [201 Created, 393B, 43ms]
+  ✓  HTTP status is 201
+  ✓  The released slot can be booked again (TC-014)
+
+↳ Step 8 - The new appointment is confirmed
+  GET http://localhost:18080/api/appointments/1006 [200 OK, 388B, 41ms]
+  ✓  HTTP status is 200
+  ✓  The second appointment is confirmed and independent
+
+┌─────────────────────────┬──────────────────┬──────────────────┐
+│                         │         executed │           failed │
+├─────────────────────────┼──────────────────┼──────────────────┤
+│              iterations │                1 │                0 │
+├─────────────────────────┼──────────────────┼──────────────────┤
+│                requests │               54 │                0 │
+├─────────────────────────┼──────────────────┼──────────────────┤
+│            test-scripts │               53 │                0 │
+├─────────────────────────┼──────────────────┼──────────────────┤
+│      prerequest-scripts │               73 │                0 │
+├─────────────────────────┼──────────────────┼──────────────────┤
+│              assertions │              137 │                0 │
+├─────────────────────────┴──────────────────┴──────────────────┤
+│ total run duration: 3s                                        │
+├───────────────────────────────────────────────────────────────┤
+│ total data received: 11.53kB (approx)                         │
+├───────────────────────────────────────────────────────────────┤
+│ average response time: 42ms [min: 18ms, max: 50ms, s.d.: 3ms] │
+└───────────────────────────────────────────────────────────────┘

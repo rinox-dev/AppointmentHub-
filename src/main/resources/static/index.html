@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AppointmentHub</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>AppointmentHub</h1>
+    <p class="subtitle">Book, review and cancel appointments with our service providers.</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="services-title">
+      <h2 id="services-title">1. Choose a service</h2>
+      <div id="service-list" class="service-list" data-testid="service-list">
+        <p class="hint" data-testid="services-loading">Loading services...</p>
+      </div>
+      <p class="selected" data-testid="service-selected">No service selected yet.</p>
+    </section>
+
+    <section class="card" aria-labelledby="availability-title">
+      <h2 id="availability-title">2. Choose a date and time</h2>
+      <div class="row">
+        <label for="date-input">Appointment date</label>
+        <input type="date" id="date-input" data-testid="date-input">
+        <button type="button" id="check-availability" data-testid="check-availability">Check availability</button>
+      </div>
+      <div id="slot-list" class="slot-list" data-testid="slot-list">
+        <p class="hint" data-testid="slots-hint">Select a service and a date to see available time slots.</p>
+      </div>
+      <p class="selected" data-testid="selected-slot">No time slot selected yet.</p>
+    </section>
+
+    <section class="card" aria-labelledby="booking-title">
+      <h2 id="booking-title">3. Confirm your booking</h2>
+      <form id="booking-form" data-testid="booking-form" novalidate>
+        <div class="row">
+          <label for="customer-name">Full name</label>
+          <input type="text" id="customer-name" data-testid="customer-name" placeholder="Ana Example">
+        </div>
+        <div class="row">
+          <label for="customer-email">Email</label>
+          <input type="text" id="customer-email" data-testid="customer-email" placeholder="ana@example.com">
+        </div>
+        <button type="submit" id="book-button" data-testid="book-button">Confirm booking</button>
+      </form>
+      <div class="message success" data-testid="message-success" hidden role="status"></div>
+      <div class="message error" data-testid="message-error" hidden role="alert"></div>
+    </section>
+
+    <section class="card" aria-labelledby="appointments-title">
+      <h2 id="appointments-title">4. Registered appointments</h2>
+      <div class="row">
+        <button type="button" id="refresh-appointments" data-testid="refresh-appointments">Refresh list</button>
+      </div>
+      <table class="appointments">
+        <thead>
+          <tr>
+            <th>Id</th>
+            <th>Customer</th>
+            <th>Email</th>
+            <th>Service</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="appointments-body" data-testid="appointments-body"></tbody>
+      </table>
+      <p class="hint" data-testid="appointments-empty">No appointments registered yet.</p>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <p>AppointmentHub &mdash; QA practice project. All data used for testing is fictional.</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

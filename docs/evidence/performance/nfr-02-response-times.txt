@@ -1,0 +1,3 @@
+NFR-02 evidence | POST /api/appointments   samples=30 avg=41ms p95=43ms max=43ms
+NFR-02 evidence | GET /api/services        samples=30 avg=41ms p95=42ms max=44ms
+NFR-02 evidence | GET /api/availability    samples=30 avg=41ms p95=42ms max=42ms
