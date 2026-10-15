@@ -150,11 +150,15 @@
       container.appendChild(hint('Select an appointment date.'));
       return Promise.resolve();
     }
+    container.innerHTML = '';
+    var loading = hint('Loading time slots...');
+    loading.setAttribute('data-testid', 'slots-loading');
+    container.appendChild(loading);
+    state.selectedSlot = null;
+    testId('selected-slot').textContent = 'No time slot selected yet.';
     return api('GET', '/api/availability?serviceId=' + state.selectedService.id + '&date=' + date)
       .then(function (result) {
         container.innerHTML = '';
-        state.selectedSlot = null;
-        testId('selected-slot').textContent = 'No time slot selected yet.';
         if (!result.ok) {
           container.appendChild(hint(errorMessage(result, 'Unable to load availability.')));
           return;

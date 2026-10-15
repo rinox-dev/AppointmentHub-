@@ -1,0 +1,2504 @@
+{
+  "info": {
+    "name": "AppointmentHub - REST API tests",
+    "description": "# AppointmentHub - REST API test collection\n\nImplements the API test strategy of the PDR (sections 10, 14 and 17) for the\nendpoints `GET /api/services`, `GET /api/availability`, `POST /api/appointments`,\n`GET /api/appointments`, `GET /api/appointments/{id}` and\n`DELETE /api/appointments/{id}`.\n\n## How to run\n\n1. Start the application: `java -jar target/appointmenthub.jar --store=memory`\n   (or `./mvnw exec:java`).\n2. Import `AppointmentHub.postman_collection.json` and\n   `AppointmentHub.postman_environment.json`, then select the environment.\n3. Run the collection, or use Newman:\n\n   `newman run postman/AppointmentHub.postman_collection.json -e postman/AppointmentHub.postman_environment.json`\n\n## What is verified\n\n* HTTP status code, response structure, data types and expected values.\n* Business rules: required fields, email format, past dates, business hours,\n  service duration, slot alignment, duplicate prevention and cancellation rules.\n* Error contract: consistent `errorCode`, `message` and `status` fields.\n* Response time against the 2 second acceptance target (NFR-02).\n* Persistence of every change through a follow-up request.\n\n## Test data\n\nEvery request that needs a free slot computes its own far future date, so the\ncollection can be run repeatedly against the same instance without cleaning data\nand without depending on the order of the folders (PDR 14.5). Folders 02 to 04\nand 07 form a documented chain: they reuse the appointment created earlier in the\nrun.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 Services",
+      "description": "Active services exposed by the API (FR-01, TC-001).",
+      "item": [
+        {
+          "name": "TC-001 Get active services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "services"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('Response time is under the 2 second target (NFR-02)', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.test('Only active services are returned', () => {",
+                  "  const services = pm.response.json();",
+                  "  pm.expect(services).to.be.an('array').that.is.not.empty;",
+                  "  services.forEach(service => pm.expect(service.active).to.be.true);",
+                  "});",
+                  "pm.test('Every service matches the documented contract', () => {",
+                  "  pm.response.json().forEach(service => {",
+                  "    pm.expect(service.id).to.be.a('number');",
+                  "    pm.expect(service.name).to.be.a('string').and.not.empty;",
+                  "    pm.expect(service.durationMinutes).to.be.a('number').above(0);",
+                  "    pm.expect(service.active).to.be.a('boolean');",
+                  "  });",
+                  "});",
+                  "pm.test('Service 1 is available and lasts 30 minutes', () => {",
+                  "  const service = pm.response.json().find(item => item.id === 1);",
+                  "  pm.expect(service.name).to.eql('General Consultation');",
+                  "  pm.expect(service.durationMinutes).to.eql(30);",
+                  "  pm.environment.set('serviceId', 1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get services including inactive ones",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/services?includeInactive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "services?includeInactive=true"
+              ]
+            },
+            "description": "Testing extension: lets the negative cases reference the inactive service id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The catalog also contains the inactive test service', () => {",
+                  "  const services = pm.response.json();",
+                  "  pm.expect(services.length).to.be.above(4);",
+                  "  pm.expect(services.some(service => service.active === false)).to.be.true;",
+                  "  pm.environment.set('inactiveServiceId', services.find(s => s.active === false).id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Unsupported method on services",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "services"
+              ]
+            },
+            "description": "NFR-08: unsupported operations return a controlled error."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 405', () => pm.response.to.have.status(405));",
+                  "pm.test('Functional error code is METHOD_NOT_ALLOWED', () => pm.expect(pm.response.json().errorCode).to.eql('METHOD_NOT_ALLOWED'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 Availability",
+      "description": "Available time slots per service and date (FR-02, TC-002).",
+      "item": [
+        {
+          "name": "TC-002 Get availability for a valid date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{scratchDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{scratchDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('Response time is under the 2 second target (NFR-02)', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.test('The response describes the requested service and date', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.serviceId).to.eql(1);",
+                  "  pm.expect(body.date).to.eql(pm.environment.get('scratchDate'));",
+                  "  pm.expect(body.durationMinutes).to.eql(30);",
+                  "  pm.expect(body.slots).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "pm.test('Slots are aligned to 30 minutes and stay inside business hours', () => {",
+                  "  pm.response.json().slots.forEach(slot => {",
+                  "    pm.expect(slot.startTime).to.match(/^\\d{2}:\\d{2}$/);",
+                  "    pm.expect(slot.startTime >= '09:00').to.be.true;",
+                  "    pm.expect(slot.endTime <= '17:00').to.be.true;",
+                  "    const minutes = (s, e) => (Number(e.slice(0,2)) * 60 + Number(e.slice(3))) - (Number(s.slice(0,2)) * 60 + Number(s.slice(3)));",
+                  "    pm.expect(minutes(slot.startTime, slot.endTime)).to.eql(30);",
+                  "  });",
+                  "  pm.environment.set('availabilityStartTime', pm.response.json().slots[0].startTime);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability for a past date is empty",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{pastDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{pastDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('A past date offers no slot (FR-02)', () => {",
+                  "  pm.expect(pm.response.json().slots).to.be.an('array').that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability without serviceId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?date={{scratchDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?date={{scratchDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability without date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability with a non numeric serviceId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=abc&date={{scratchDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=abc&date={{scratchDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability with an invalid date format",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date=11-02-2027",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date=11-02-2027"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is INVALID_DATE_FORMAT', () => pm.expect(pm.response.json().errorCode).to.eql('INVALID_DATE_FORMAT'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability for a nonexistent service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=99&date={{scratchDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=99&date={{scratchDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Functional error code is SERVICE_NOT_FOUND', () => pm.expect(pm.response.json().errorCode).to.eql('SERVICE_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Availability for an inactive service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId={{inactiveServiceId}}&date={{scratchDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId={{inactiveServiceId}}&date={{scratchDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Functional error code is SERVICE_INACTIVE', () => pm.expect(pm.response.json().errorCode).to.eql('SERVICE_INACTIVE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 Appointment creation",
+      "description": "Creating appointments with valid data (FR-03, FR-04, TC-003).",
+      "item": [
+        {
+          "name": "TC-003 Create an appointment with valid data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "Every field of the documented entity is returned, including endTime and createdAt.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('A unique identifier is returned (FR-04)', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.be.a('number').above(0);",
+                  "  pm.environment.set('appointmentId', body.id);",
+                  "});",
+                  "pm.test('The appointment is confirmed and echoes the request', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.expect(body.customerName).to.eql('Ana Example');",
+                  "  pm.expect(body.customerEmail).to.eql('ana@example.com');",
+                  "  pm.expect(body.serviceId).to.eql(1);",
+                  "  pm.expect(body.appointmentDate).to.eql(pm.environment.get('scratchDate'));",
+                  "  pm.expect(body.startTime).to.eql('10:00');",
+                  "  pm.expect(body.endTime).to.eql('10:30');",
+                  "  pm.expect(body.createdAt).to.be.a('string').and.not.empty;",
+                  "  pm.environment.set('appointmentDate', body.appointmentDate);",
+                  "  pm.environment.set('appointmentStartTime', body.startTime);",
+                  "  pm.environment.set('appointmentEmail', body.customerEmail);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create an appointment for a 60 minute service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Bruno Example\",\n  \"customerEmail\": \"bruno@example.com\",\n  \"serviceId\": 3,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"09:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('The end time derives from the service duration (BR-06)', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.startTime).to.eql('09:00');",
+                  "  pm.expect(body.endTime).to.eql('10:00');",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 Appointment retrieval",
+      "description": "Reading registered appointments (FR-05, FR-06, TC-009, TC-010).",
+      "item": [
+        {
+          "name": "TC-009 Get an existing appointment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{appointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{appointmentId}}"
+              ]
+            },
+            "description": "Depends on the appointment created in folder 02 (documented chain)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('Response time is under the 2 second target (NFR-02)', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.test('The retrieved appointment matches the created one', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.eql(Number(pm.environment.get('appointmentId')));",
+                  "  pm.expect(body.customerName).to.eql('Ana Example');",
+                  "  pm.expect(body.customerEmail).to.eql(pm.environment.get('appointmentEmail'));",
+                  "  pm.expect(body.appointmentDate).to.eql(pm.environment.get('appointmentDate'));",
+                  "  pm.expect(body.startTime).to.eql(pm.environment.get('appointmentStartTime'));",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get the registered appointments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('Response time is under the 2 second target (NFR-02)', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "pm.test('The list contains the appointment created earlier (FR-06)', () => {",
+                  "  const appointments = pm.response.json();",
+                  "  pm.expect(appointments).to.be.an('array');",
+                  "  pm.expect(appointments.some(item => item.id === Number(pm.environment.get('appointmentId')))).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Filter the appointment list by customer email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments?customerEmail={{appointmentEmail}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments?customerEmail={{appointmentEmail}}"
+              ]
+            },
+            "description": "Documented extension: optional customerEmail filter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Only appointments of that customer are returned', () => {",
+                  "  const appointments = pm.response.json();",
+                  "  pm.expect(appointments).to.be.an('array').that.is.not.empty;",
+                  "  appointments.forEach(item => pm.expect(item.customerEmail).to.eql(pm.environment.get('appointmentEmail')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-010 Get a nonexistent appointment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/987654",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "987654"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Functional error code is APPOINTMENT_NOT_FOUND', () => pm.expect(pm.response.json().errorCode).to.eql('APPOINTMENT_NOT_FOUND'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get an appointment with a non numeric id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/not-a-number",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "not-a-number"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 Cancellation",
+      "description": "Cancelling appointments and releasing the time slot (FR-07, FR-11).",
+      "item": [
+        {
+          "name": "TC-011 Cancel a confirmed appointment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{appointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{appointmentId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+                  "pm.test('The appointment is cancelled', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.eql(Number(pm.environment.get('appointmentId')));",
+                  "  pm.expect(body.status).to.eql('CANCELLED');",
+                  "  pm.expect(body.appointmentDate).to.eql(pm.environment.get('appointmentDate'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "The cancellation is persisted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{appointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{appointmentId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The stored appointment is cancelled (NFR-04)', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('CANCELLED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-014 The released slot is offered again",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{appointmentDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{appointmentDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The cancelled slot is available again (FR-11, BR-10)', () => {",
+                  "  const startTimes = pm.response.json().slots.map(slot => slot.startTime);",
+                  "  pm.expect(startTimes).to.include(pm.environment.get('appointmentStartTime'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-014 Book the released slot again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Carla Example\",\n  \"customerEmail\": \"carla@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{appointmentDate}}\",\n  \"startTime\": \"{{appointmentStartTime}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('The released slot can be booked by another customer', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.expect(body.startTime).to.eql(pm.environment.get('appointmentStartTime'));",
+                  "  pm.expect(body.id).to.not.eql(Number(pm.environment.get('appointmentId')));",
+                  "  pm.environment.set('rebookedAppointmentId', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-012 Cancel an already cancelled appointment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{appointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{appointmentId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Functional error code is APPOINTMENT_ALREADY_CANCELLED', () => pm.expect(pm.response.json().errorCode).to.eql('APPOINTMENT_ALREADY_CANCELLED'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});",
+                  "pm.test('The appointment keeps its cancelled status', () => {",
+                  "  pm.sendRequest(`${pm.environment.get('baseUrl')}/api/appointments/${pm.environment.get('appointmentId')}`,",
+                  "    (error, response) => pm.expect(response.json().status).to.eql('CANCELLED'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-013 Cancel a nonexistent appointment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/987654",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "987654"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Functional error code is APPOINTMENT_NOT_FOUND', () => pm.expect(pm.response.json().errorCode).to.eql('APPOINTMENT_NOT_FOUND'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 Negative validation",
+      "description": "Rejected input; every request is independent from the other folders (FR-09, FR-10).",
+      "item": [
+        {
+          "name": "TC-004 Booking without a name",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});",
+                  "pm.test('The message names the offending field', () => pm.expect(pm.response.json().message).to.include('customerName'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-005 Booking without an email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('The message names the offending field', () => pm.expect(pm.response.json().message).to.include('customerEmail'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-006 Booking with a malformed email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana.example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Booking with an email without a domain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "Equivalence partitioning: another invalid email class (PDR 13.1).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Booking without a service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is VALIDATION_ERROR', () => pm.expect(pm.response.json().errorCode).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-007 Booking for a past date",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "Boundary value analysis: the day before the current date (PDR 13.2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{pastDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is PAST_DATE', () => pm.expect(pm.response.json().errorCode).to.eql('PAST_DATE'));",
+                  "pm.test('The rejected date is explained', () => pm.expect(pm.response.json().message).to.include(pm.environment.get('pastDate')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-017 Booking with an invalid date format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"10-02-2027\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is INVALID_DATE_FORMAT', () => pm.expect(pm.response.json().errorCode).to.eql('INVALID_DATE_FORMAT'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Booking with an invalid time format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10h00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is INVALID_TIME_FORMAT', () => pm.expect(pm.response.json().errorCode).to.eql('INVALID_TIME_FORMAT'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-022 Booking outside business hours",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is OUTSIDE_BUSINESS_HOURS', () => pm.expect(pm.response.json().errorCode).to.eql('OUTSIDE_BUSINESS_HOURS'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Booking with a misaligned start time",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is SLOT_NOT_ALIGNED', () => pm.expect(pm.response.json().errorCode).to.eql('SLOT_NOT_ALIGNED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-016 Booking with a nonexistent service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": 99,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Functional error code is SERVICE_NOT_FOUND', () => pm.expect(pm.response.json().errorCode).to.eql('SERVICE_NOT_FOUND'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-021 Booking with an inactive service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": \"{{inactiveServiceId}}\",\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Functional error code is SERVICE_INACTIVE', () => pm.expect(pm.response.json().errorCode).to.eql('SERVICE_INACTIVE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-018 Booking without a body",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is MISSING_BODY', () => pm.expect(pm.response.json().errorCode).to.eql('MISSING_BODY'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-018 Booking with malformed JSON",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customerName\": \"Ana\",",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is MALFORMED_REQUEST', () => pm.expect(pm.response.json().errorCode).to.eql('MALFORMED_REQUEST'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Booking with a wrong data type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Ana Example\",\n  \"customerEmail\": \"ana@example.com\",\n  \"serviceId\": \"abc\",\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Functional error code is MALFORMED_REQUEST', () => pm.expect(pm.response.json().errorCode).to.eql('MALFORMED_REQUEST'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 Conflict scenarios",
+      "description": "Occupied time slots must never be confirmed twice (FR-08, BR-08).",
+      "item": [
+        {
+          "name": "Prepare a confirmed appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "Fixture: must run before the duplicate attempts below.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Conflict Owner\",\n  \"customerEmail\": \"conflict.owner@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('The fixture appointment is confirmed', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.environment.set('conflictAppointmentId', body.id);",
+                  "  pm.environment.set('conflictDate', body.appointmentDate);",
+                  "  pm.environment.set('conflictStartTime', body.startTime);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-008 Duplicate booking for the same slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Duplicate Attempt\",\n  \"customerEmail\": \"duplicate.attempt@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{conflictDate}}\",\n  \"startTime\": \"{{conflictStartTime}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Functional error code is SLOT_NOT_AVAILABLE', () => pm.expect(pm.response.json().errorCode).to.eql('SLOT_NOT_AVAILABLE'));",
+                  "pm.test('Error message does not expose internals (NFR-08)', () => {",
+                  "  const message = pm.response.json().message;",
+                  "  pm.expect(message).to.be.a('string').and.not.empty;",
+                  "  pm.expect(message).to.not.match(/Exception|com\\.appointmenthub|\\tat /);",
+                  "});",
+                  "pm.test('The conflict explains which slot is occupied', () =>",
+                  "  pm.expect(pm.response.json().message).to.include(pm.environment.get('conflictStartTime')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-008 The duplicate is not registered",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments?customerEmail=duplicate.attempt@example.com",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments?customerEmail=duplicate.attempt@example.com"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No appointment was created for the rejected request', () => {",
+                  "  pm.expect(pm.response.json()).to.be.an('array').that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-008 The original appointment is unchanged",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{conflictAppointmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{conflictAppointmentId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The first appointment is still confirmed (BR-07)', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('CONFIRMED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "TC-008 The occupied slot is no longer offered",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{conflictDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{conflictDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Availability reflects the occupied slot', () => {",
+                  "  const startTimes = pm.response.json().slots.map(slot => slot.startTime);",
+                  "  pm.expect(startTimes).to.not.include(pm.environment.get('conflictStartTime'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Another service cannot use the same slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Other Service\",\n  \"customerEmail\": \"other.service@example.com\",\n  \"serviceId\": 2,\n  \"appointmentDate\": \"{{conflictDate}}\",\n  \"startTime\": \"{{conflictStartTime}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Functional error code is SLOT_NOT_AVAILABLE', () => pm.expect(pm.response.json().errorCode).to.eql('SLOT_NOT_AVAILABLE'));",
+                  "pm.test('The resource is exclusive for every service (BR-08)', () =>",
+                  "  pm.expect(pm.response.json().errorCode).to.eql('SLOT_NOT_AVAILABLE'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 Regression (end to end)",
+      "description": "Booking life cycle executed in order; this folder is the regression pack for changes.",
+      "item": [
+        {
+          "name": "Step 1 - Services are available",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "services"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The catalog is not empty', () => pm.expect(pm.response.json()).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 2 - Create an appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Regression Customer\",\n  \"customerEmail\": \"regression@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{scratchDate}}\",\n  \"startTime\": \"14:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A unique far-future date keeps this request independent from other runs (PDR 14.5).",
+                  "const pad = n => String(n).padStart(2, '0');",
+                  "const offset = 90 + Math.floor(Math.random() * 200);",
+                  "const d = new Date(Date.now() + offset * 86400000);",
+                  "pm.environment.set('scratchDate', `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('The booking is confirmed and traceable', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.environment.set('regressionId', body.id);",
+                  "  pm.environment.set('regressionDate', body.appointmentDate);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 3 - Retrieve the appointment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{regressionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{regressionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The appointment can be read back', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.eql(Number(pm.environment.get('regressionId')));",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.expect(body.customerEmail).to.eql('regression@example.com');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 4 - The slot is occupied",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{regressionDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{regressionDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The booked slot is not offered', () => {",
+                  "  const startTimes = pm.response.json().slots.map(slot => slot.startTime);",
+                  "  pm.expect(startTimes).to.not.include('14:00');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 5 - Cancel the appointment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{regressionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{regressionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The appointment is cancelled', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 6 - The slot is released",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/availability?serviceId=1&date={{regressionDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "availability?serviceId=1&date={{regressionDate}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The slot is offered again (FR-11)', () => {",
+                  "  const startTimes = pm.response.json().slots.map(slot => slot.startTime);",
+                  "  pm.expect(startTimes).to.include('14:00');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 7 - Rebook the released slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"Second Customer\",\n  \"customerEmail\": \"second.customer@example.com\",\n  \"serviceId\": 1,\n  \"appointmentDate\": \"{{regressionDate}}\",\n  \"startTime\": \"14:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('The released slot can be booked again (TC-014)', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.environment.set('regressionSecondId', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Step 8 - The new appointment is confirmed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/appointments/{{regressionSecondId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "appointments",
+                "{{regressionSecondId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('The second appointment is confirmed and independent', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('CONFIRMED');",
+                  "  pm.expect(body.id).to.not.eql(Number(pm.environment.get('regressionId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Runs before every request: keeps the run scoped variables fresh.",
+          "const pad = n => String(n).padStart(2, '0');",
+          "const past = new Date(Date.now() - 86400000);",
+          "pm.environment.set('pastDate',",
+          "  `${past.getUTCFullYear()}-${pad(past.getUTCMonth() + 1)}-${pad(past.getUTCDate())}`);"
+        ]
+      }
+    }
+  ],
+  "variable": []
+}
