@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.appointmenthub.api.ErrorContractApiTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.156 s -- in com.appointmenthub.api.ErrorContractApiTest
