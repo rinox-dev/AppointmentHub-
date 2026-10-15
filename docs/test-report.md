@@ -98,9 +98,9 @@ below 2000 ms.
 
 | Operation | Samples | Average | p95 | Maximum | Result |
 |---|---|---|---|---|---|
-| `GET /api/services` | 30 | 41 ms | 42 ms | 42 ms | Pass |
-| `GET /api/availability` | 30 | 41 ms | 42 ms | 43 ms | Pass |
-| `POST /api/appointments` | 30 | 41 ms | 42 ms | 43 ms | Pass |
+| `GET /api/services` | 30 | 41 ms | 42 ms | 44 ms | Pass |
+| `GET /api/availability` | 30 | 41 ms | 42 ms | 42 ms | Pass |
+| `POST /api/appointments` | 30 | 41 ms | 43 ms | 43 ms | Pass |
 
 The Newman run reports an average response time of 42 ms over 54 requests
 (minimum 18 ms, maximum 50 ms). Evidence:
